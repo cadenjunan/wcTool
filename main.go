@@ -8,86 +8,74 @@ import (
 	"os"
 	"strings"
 	"unicode"
+	
 )
 
-func readBytes(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("error while reading %s, cause: %s", path, err.Error())
-	}
-	fmt.Printf("%d %s\n", len(data), path)
-	return nil
+
+type CommandInput struct {
+	DoByteCount *bool
+	DoLineCount *bool
+	DoWordCount *bool
 }
-func lineCount(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("error while opening %s, cause: %s", path, err.Error())
-	}
-	reader := bufio.NewReader(f)
-	lines := 0
-	cond: for {
-		_, err := reader.ReadString('\n')
-		if err == io.EOF {
-			break cond
-		}
-		lines ++
-	}
-	fmt.Printf("%d %s\n",lines, path)
-	return nil
+type Results struct {
+	ByteCount int64
+	LineCount int
+	WordCount int
+	CharCount int
 }
 
-func wordCount(path string) error {
-	f, err := os.Open(path)
+func WcTool(input CommandInput, filePath string) (*Results, error) {
+	f, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("error while opening %s, cause: %s", path, err.Error())
+		return nil, err
 	}
-	removeNonChars := func(ch rune) bool {
-		return !unicode.IsLetter(ch) && !unicode.IsNumber(ch)
+	results := &Results{ByteCount: 0, LineCount: 0, WordCount: 0, CharCount: 0}
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
 	}
-	getNonChars := func(ch rune) bool {
-		return !unicode.IsSymbol(ch)
+	filter := func (r rune) bool {
+		return unicode.IsLetter(r)  || unicode.IsNumber(r) || unicode.IsSymbol(r) || unicode.IsSpace(r) || unicode.IsGraphic(r)
 	}
+	results.ByteCount = info.Size()
 	reader := bufio.NewReader(f)
-	count := 0
-	cond: for {
-		sentence, err := reader.ReadString('\n')
-		if err == io.EOF {
-			break cond
-		}
-		words := strings.Split(sentence, " ")
-		for _, word := range words {
-			trimWord := strings.TrimFunc(word, removeNonChars)
-			symbols := strings.TrimFunc(word, getNonChars)
-			if len(trimWord) > 0 {
-				count += 1
+	for  {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			if err == io.EOF{
+				break
+			}else{
+				return nil,err
 			}
-			count += len(symbols)
-			
 		}
+		results.LineCount ++
+		trimLine := strings.TrimFunc(line, func(r rune) bool {return !unicode.IsLetter(r) && !unicode.IsSpace(r)})
+		results.WordCount += len(strings.Split(trimLine, " "))
+		for _, ch := range line {
+			if filter(ch) {
+				results.CharCount ++
+			}
+		}
+		
+		// results.CharCount += len(filterChars)
 	}
-	fmt.Printf("%d %s\n",count, path)
-	return nil
+	
+
+	
+	return results,nil
 }
 
 func main() {
-	byteCountCmd := flag.Bool("c", false, "add flag -c to count the number of bytes in the file")
-	lineCountCmd := flag.Bool("l", false, "add flag -l to count the number of lines in the file")
-	wordCountCmd := flag.Bool("w", false, "add flag -w to count the number of words in the file")
-	flag.Parse()
-	if *byteCountCmd {
-		err := readBytes(flag.Arg(0))
-		if err != nil {
-			panic(err.Error())
-		}
-	}else if *lineCountCmd {
-		err := lineCount(flag.Arg(0))
-		if err != nil {
-			panic(err.Error())
-		}
-	}else if *wordCountCmd {
-		err := wordCount(flag.Arg(0))
-		if err != nil {
-			panic(err.Error())
-		}
+	
+	input := CommandInput{
+		DoByteCount: flag.Bool("c", false, "add flag -c to count the number of bytes in the file"),
+		DoLineCount: flag.Bool("l", false, "add flag -l to count the number of lines in the file"),
+		DoWordCount:flag.Bool("w", false, "add flag -w to count the number of words in the file") ,
 	}
+	flag.Parse()
+	r, err := WcTool(input, flag.Arg(0))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("Bytes: %d, Lines: %d, Words: %d, Chars: %d\n", r.ByteCount, r.LineCount, r.WordCount, r.CharCount)
 }
